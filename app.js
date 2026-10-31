@@ -10,6 +10,9 @@ const Store = window.UAIStore || { persistent: false, get: () => null, set: () =
 function load() { try { const raw = Store.get(KEY); if (raw) return JSON.parse(raw); } catch (e) {} return { weeks: {}, items: {}, refs: {}, start: '' }; }
 let S = load();
 S.weeks ||= {}; S.items ||= {}; S.refs ||= {};
+const MS = () => (S.micro ||= { done: {}, tried: {}, rev: {} });
+const M = window.UAI_MICRO || { lessons: [], science: [] };
+const LES = {}; M.lessons.forEach((l, i) => { LES[l.id] = l; l.i = i; });
 function save() { try { Store.set(KEY, JSON.stringify(S)); } catch (e) {} }
 const W = n => (S.weeks[n] ||= { status: 'todo', checks: {}, notes: '', score: {} });
 
@@ -53,7 +56,7 @@ function confirmDlg(title, body, okText = 'Confirm') {
 const chev = '<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
 
 /* ---------- navigation ---------- */
-let stack = [{ v: 'plan' }];
+let stack = [{ v: 'today' }];
 let refFilter = { q: '', type: 'All', unread: false };
 function go(view, push = true) { if (push) stack.push(view); else stack = [view]; render(); }
 function back() { if (stack.length > 1) { stack.pop(); render(); } }
@@ -64,15 +67,15 @@ app.addEventListener('click', e => {
   const r = e.target.closest('[data-ref]');
   if (r) { e.preventDefault(); refFilter = { q: '', type: 'All', unread: false }; go({ v: 'refs', focus: +r.dataset.ref }); return; }
   const nav = e.target.closest('[data-go]');
-  if (nav) { e.preventDefault(); const [v, id] = nav.dataset.go.split(':'); go({ v, id: v === 'week' ? +id : id }); }
+  if (nav) { e.preventDefault(); const [v, id] = nav.dataset.go.split(':'); go({ v, id: (v === 'week' || v === 'mweek') ? +id : id }); }
 });
 
 function render() {
   const cur = stack[stack.length - 1];
-  const tab = { plan: 'plan', week: 'plan', modules: 'modules', module: 'modules', refs: 'refs', settings: 'settings' }[cur.v];
+  const tab = { today: 'today', lesson: 'today', mweek: 'today', about: 'today', plan: 'plan', week: 'plan', modules: 'modules', module: 'modules', refs: 'refs', settings: 'settings' }[cur.v];
   document.querySelectorAll('.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   $('#backBtn').hidden = stack.length < 2;
-  const views = { plan: vPlan, week: vWeek, modules: vModules, module: vModule, refs: vRefs, settings: vSettings };
+  const views = { today: vToday, lesson: vLesson, mweek: vMWeek, about: vAbout, plan: vPlan, week: vWeek, modules: vModules, module: vModule, refs: vRefs, settings: vSettings };
   views[cur.v](cur);
   if (cur.focus) {
     const el = document.getElementById('ref-' + cur.focus);
@@ -81,6 +84,145 @@ function render() {
   } else window.scrollTo(0, 0);
 }
 const setTitle = t => { $('#viewTitle').textContent = t; document.title = t + ' · UpskillAI Self Study'; };
+
+
+/* ---------- Micro-learning ---------- */
+const pad = n => String(n).padStart(2, '0');
+const dstr = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => dstr(new Date());
+const addDays = (ds, k) => { const d = new Date(ds + 'T12:00:00'); d.setDate(d.getDate() + k); return dstr(d); };
+const lDone = id => !!MS().done[id];
+function streak() {
+  const days = new Set(Object.values(MS().done)); let d = today(), n = 0;
+  if (!days.has(d)) d = addDays(d, -1);
+  while (days.has(d)) { n++; d = addDays(d, -1); }
+  return n;
+}
+const minutes = () => Object.keys(MS().done).length * 10 + Object.keys(MS().done).filter(id => MS().tried[id]).length * 5;
+const doneToday = () => Object.values(MS().done).filter(d => d === today()).length;
+const nextLesson = () => M.lessons.find(l => !lDone(l.id));
+function dueReview() {
+  const t = today(), m = MS(); let best = null;
+  Object.entries(m.done).forEach(([id, d]) => {
+    if (d >= t || !LES[id]) return;
+    const r = m.rev[id]; const due = r ? r.due : addDays(d, 1);
+    if (due <= t && (!best || due < best.due)) best = { id, due };
+  });
+  return best && LES[best.id];
+}
+function refLinks(ids) {
+  return ids.map(n => { const r = REF[n]; if (!r) return '';
+    return `<li><a href="${r.url}" target="_blank" rel="noopener">${esc(r.title)}</a><sup class="ref"><a href="#ref-${n}" data-ref="${n}" aria-label="Reference ${n}">[${n}]</a></sup>${r.author ? `<span class="au"> · ${esc(r.author)}</span>` : ''}</li>`; }).join('');
+}
+function lessonRow(l) {
+  const d = lDone(l.id);
+  return `<button class="row" data-go="lesson:${l.id}" aria-label="Day ${l.day}: ${esc(l.t)}${d ? ', done' : ''}">
+    <span class="wk ${d ? 'done' : ''}">${d ? '✓' : l.day}</span>
+    <span class="rowmain"><b>${esc(l.t)}</b><small>Week ${l.week} · Day ${l.day} · 10–15 min</small></span>${chev}</button>`;
+}
+function vToday() {
+  setTitle('Today');
+  const m = MS(), nl = nextLesson(), total = M.lessons.length, nd = Object.keys(m.done).length, st = streak(), dt = doneToday();
+  let h = `<section class="card hero tagline">
+    <div class="label">Microlearning · 10–15 min a day</div>
+    <h2>Learning AI doesn’t have to be overwhelming.</h2>
+    <p>Microlearning gives you quick, actionable lessons—perfect for busy people. Small steps, big progress!</p>
+    <div class="btnrow"><button class="btn ghost" data-go="about:">Learn more</button></div>
+    <div class="stats"><div class="stat"><b>${st}</b><span>day streak</span></div>
+    <div class="stat"><b>${nd}/${total}</b><span>lessons</span></div>
+    <div class="stat"><b>${minutes()}</b><span>minutes</span></div></div>
+    <div class="bar" aria-hidden="true"><i style="width:${nd / total * 100}%"></i></div></section>`;
+  if (nl) {
+    h += `<div class="sectionhead"><h3>${dt ? 'Done for today' : 'Today’s lesson'}</h3><span>Week ${nl.week} · Day ${nl.day}</span></div>
+    <section class="card lessoncard">
+      ${dt ? `<p class="note" style="margin:0 0 8px">You finished ${dt === 1 ? 'today’s lesson' : dt + ' lessons today'}. Come back tomorrow to keep your streak, or keep going now.</p>` : ''}
+      <div class="code">10 min core · +5 min try-it</div>
+      <h2 class="ltitle">${esc(nl.t)}</h2>
+      <p class="muted" style="margin:6px 0 0">${esc(nl.l.split('. ')[0])}.</p>
+      <div class="btnrow"><button class="btn primary" data-go="lesson:${nl.id}">${dt ? 'Keep going' : 'Start lesson'}</button></div>
+    </section>`;
+  } else h += `<section class="card"><h2 class="ltitle">All ${total} lessons complete</h2><p class="muted">Keep the knowledge fresh with the daily review below, or switch to the full track in Plan.</p></section>`;
+  const rv = dueReview();
+  if (rv) {
+    h += `<div class="sectionhead"><h3>Quick review</h3><span>1 min</span></div>
+    <section class="card review"><div class="code">From Week ${rv.week} · ${esc(rv.t)}</div>
+      <p class="q">${esc(rv.q)}</p>
+      <p class="note">Answer in your head or out loud first.</p>
+      <div class="ans" id="rvAns" hidden>${esc(rv.a)}</div>
+      <div class="btnrow" id="rvBtns"><button class="btn" id="rvShow">Reveal answer</button></div></section>`;
+  }
+  h += `<div class="sectionhead"><h3>Your path</h3><span>20 weeks · 5 lessons each</span></div><div class="list">`;
+  D.weeks.forEach(w => {
+    const ls = M.lessons.filter(l => l.week === w.week), k = ls.filter(l => lDone(l.id)).length;
+    h += `<button class="row" data-go="mweek:${w.week}" aria-label="Week ${w.week}: ${esc(w.module)}, ${k} of 5 lessons done">
+      <span class="wk ${k === 5 ? 'done' : k ? 'prog' : ''}">${k === 5 ? '✓' : w.week}</span>
+      <span class="rowmain"><b>${esc(w.module)}</b><small class="pips">${ls.map(l => `<i class="${lDone(l.id) ? 'on' : ''}"></i>`).join('')}<em>${k}/5</em></small></span>${chev}</button>`;
+  });
+  h += `</div>`;
+  app.innerHTML = h;
+  if (rv) {
+    $('#rvShow').onclick = () => { $('#rvAns').hidden = false;
+      $('#rvBtns').innerHTML = `<button class="btn" id="rvAgain">Review again soon</button><button class="btn primary" id="rvGot">Got it</button>`;
+      const setRev = ok => { const r = MS().rev[rv.id] || { iv: 1 }; const iv = ok ? Math.min(r.iv * 2 + 1, 60) : 1;
+        MS().rev[rv.id] = { iv, due: addDays(today(), iv) }; save(); toast(ok ? `Next review in ${iv} days` : 'You will see it again tomorrow'); render(); };
+      $('#rvGot').onclick = () => setRev(true); $('#rvAgain').onclick = () => setRev(false); };
+  }
+}
+function vMWeek({ id: n }) {
+  const w = D.weeks.find(x => x.week === n); setTitle('Week ' + n + ' lessons');
+  app.innerHTML = `<section class="card modhead"><div class="code">Micro track · Week ${n}</div><h2>${esc(w.module)}</h2>
+    <p>Five 10–15 minute lessons. Day 5 is a recap tied to this week’s deliverable.</p>
+    <div class="btnrow"><button class="btn" data-go="week:${n}">Open full week</button></div></section>
+    <div class="list">${M.lessons.filter(l => l.week === n).map(lessonRow).join('')}</div>`;
+}
+let timer = null;
+function vLesson({ id }) {
+  const l = LES[id]; if (!l) return go({ v: 'today' }, false);
+  setTitle('Week ' + l.week + ' · Day ' + l.day);
+  const m = MS(), d = lDone(id), nx = M.lessons[l.i + 1];
+  app.innerHTML = `<section class="card modhead"><div class="code">Week ${l.week} · Day ${l.day} of 5</div><h2>${esc(l.t)}</h2>
+    <div class="timer"><button class="btn ghost" id="tmBtn" aria-live="polite">Start 10:00 timer</button><button class="linkbtn" data-go="week:${l.week}">Part of Week ${l.week}</button></div></section>
+    <section class="card step"><div class="sn"><b>1</b><span>Learn · 3 min</span></div><p>${esc(l.l)}</p></section>
+    <section class="card step"><div class="sn"><b>2</b><span>Read or watch · 5 min</span></div><p>${esc(l.s)}</p><ul class="rl">${refLinks(l.r)}</ul></section>
+    <section class="card step"><div class="sn"><b>3</b><span>Quick check · 2 min</span></div><p class="q">${esc(l.q)}</p>
+      <div class="ans" id="ans" ${d ? '' : 'hidden'}>${esc(l.a)}</div>${d ? '' : `<div class="btnrow"><button class="btn" id="showAns">Reveal answer</button></div>`}</section>
+    <section class="card step"><div class="sn"><b>4</b><span>Try it · +5 min, optional</span></div>
+      <label class="check"><input type="checkbox" id="tried" ${m.tried[id] ? 'checked' : ''}><span>${esc(l.y)}</span></label></section>
+    <div class="btnrow finish">${d ? `<span class="donepill">Completed ${new Date(m.done[id] + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span><button class="btn ghost" id="undo">Mark not done</button>` : `<button class="btn primary wide" id="finish">Complete lesson</button>`}
+      ${nx ? `<button class="btn ${d ? 'primary' : 'ghost'}" data-go="lesson:${nx.id}">Next lesson</button>` : ''}</div>`;
+  const sa = $('#showAns'); if (sa) sa.onclick = () => { $('#ans').hidden = false; sa.parentElement.remove(); };
+  $('#tried').onchange = e => { m.tried[id] = e.target.checked; save(); };
+  const f = $('#finish'); if (f) f.onclick = () => { m.done[id] = today(); save(); clearInterval(timer);
+    const s = streak(); toast(s > 1 ? `Lesson complete · ${s}-day streak` : 'Lesson complete'); render(); };
+  const u = $('#undo'); if (u) u.onclick = () => { delete m.done[id]; delete m.rev[id]; save(); render(); };
+  clearInterval(timer); let left = 600, run = false; const tb = $('#tmBtn');
+  const fmt = () => `${Math.floor(left / 60)}:${pad(left % 60)}`;
+  tb.onclick = () => { run = !run;
+    if (run) { tb.textContent = 'Pause ' + fmt(); timer = setInterval(() => { if (!document.body.contains(tb)) return clearInterval(timer);
+      left--; tb.textContent = left > 0 ? 'Pause ' + fmt() : 'Time is up. Finish the quick check'; if (left <= 0) { clearInterval(timer); run = false; } }, 1000); }
+    else { clearInterval(timer); tb.textContent = 'Resume ' + fmt(); } };
+}
+function vAbout() {
+  setTitle('Microlearning');
+  const sci = refLinks(D.refs.filter(r => /doi.org\/10.(1177\/1529100612453266|1037\/0033-2909.132.3.354|1111\/j.1467-9280.2006.01693.x)/.test(r.url)).map(r => r.id));
+  app.innerHTML = `<section class="card hero tagline"><div class="label">How it works</div><h2>Small steps, big progress</h2>
+    <p>One focused lesson a day: 10 minutes of core learning, plus an optional 5-minute try-it.</p></section>
+    <section class="card"><div class="modsec"><h4>Every lesson has four steps</h4><ol class="steps">
+      <li><strong>Learn.</strong> One idea, explained in plain language.</li>
+      <li><strong>Read or watch.</strong> One scoped piece of a free resource, such as a chapter section or a short video.</li>
+      <li><strong>Quick check.</strong> Answer from memory before you reveal the answer.</li>
+      <li><strong>Try it.</strong> A small action you can apply at work or in a notebook.</li></ol></div></section>
+    <section class="card"><div class="modsec"><h4>Why short daily sessions work</h4>
+      <p style="margin:0 0 8px">Two of the best-supported study techniques are spacing practice out over time and testing yourself instead of rereading. A major review rated both practice testing and distributed practice as high-utility techniques. The quick check uses retrieval practice, and the Quick review on the Today screen brings back earlier questions at growing intervals.</p>
+      <ul class="rl">${sci}</ul></div></section>
+    <section class="card"><div class="modsec"><h4>Micro track or full track</h4>
+      <p style="margin:0">The micro track follows the same 20 weeks, five lessons per week, about an hour a week. It covers the core idea of each topic. The full track in Plan (6–8 hours a week) adds complete readings, builder labs, and phase gates. Use either one, or mix them: each week links to the other.</p></div></section>
+    <section class="card"><div class="modsec"><h4>Tips</h4><ol class="steps">
+      <li>Pick a fixed time, such as with your morning coffee.</li>
+      <li>Use the 10-minute timer so the session stays small.</li>
+      <li>Missed a day? Just do the next lesson. The streak restarts, your progress does not.</li></ol>
+      <div class="btnrow"><button class="btn primary" data-go="today:">Back to today</button></div></div></section>`;
+}
 
 /* ---------- Plan ---------- */
 function vPlan() {
@@ -134,6 +276,8 @@ function vWeek({ id: n }) {
       ${DIMS.map(([k, lab]) => `<label id="lb-${k}">${lab}</label><div class="dots" role="group" aria-labelledby="lb-${k}">${[1, 2, 3, 4, 5].map(v => `<button data-score="${k}:${v}" aria-pressed="${s.score[k] === v}">${v}</button>`).join('')}</div>`).join('')}
       </div><div class="gate" id="gate"></div></div></section>`;
   }
+  const wl = M.lessons.filter(l => l.week === n);
+  if (wl.length) h += `<section class="card"><div class="modsec"><h4>Daily micro-lessons · 10–15 min</h4><div class="list flat">${wl.map(lessonRow).join('')}</div></div></section>`;
   w.mods.forEach(id => { h += moduleCard(MODS[id], true); });
   h += `<section class="card"><div class="modsec"><h4>Notes</h4><textarea id="notes" placeholder="Key takeaways, questions, links to your notebooks…">${esc(s.notes || '')}</textarea></div></section>`;
   app.innerHTML = h;
@@ -273,7 +417,7 @@ function vSettings() {
     r.onload = () => { try { const d = JSON.parse(r.result); if (!d.weeks) throw 0; S = { weeks: {}, items: {}, refs: {}, start: '', ...d }; save(); toast('Backup imported'); }
       catch (err) { toast('That file is not a valid backup'); } }; r.readAsText(f); };
   $('#reset').onclick = async () => { if (await confirmDlg('Reset all progress?', 'This clears every status, checkmark, score, and note on this device. Export a backup first if you want to keep them.', 'Reset')) {
-    S = { weeks: {}, items: {}, refs: {}, start: S.start }; save(); toast('Progress reset'); } };
+    S = { weeks: {}, items: {}, refs: {}, start: S.start, micro: { done: {}, tried: {}, rev: {} } }; save(); toast('Progress reset'); } };
 }
 
 render();
