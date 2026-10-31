@@ -80,7 +80,7 @@ function render() {
     delete cur.focus;
   } else window.scrollTo(0, 0);
 }
-const setTitle = t => { $('#viewTitle').textContent = t; document.title = t + ' · Universal AI Study Guide'; };
+const setTitle = t => { $('#viewTitle').textContent = t; document.title = t + ' · UpskillAI Self Study'; };
 
 /* ---------- Plan ---------- */
 function vPlan() {
@@ -178,13 +178,13 @@ function bindItems() {
 /* ---------- Modules ---------- */
 function vModules() {
   setTitle('Modules');
-  let h = `<p class="muted" style="margin:0 4px 12px">Five core MIT courses and 16 modules, plus two added weeks and an elective. Tap a module for its readings and lectures.</p>`;
+  let h = `<p class="muted" style="margin:0 4px 12px">Five core courses and 16 modules, plus two added weeks and an elective. Tap a module for its readings and lectures.</p>`;
   D.phases.forEach(p => {
     const c = D.courses.find(x => x.n === p.n);
     h += `<div class="sectionhead"><h3>Phase ${p.n} · Weeks ${p.weeks}</h3></div>`;
     h += `<section class="card course"><div class="modhead"><div class="code">${c ? 'Course ' + c.n + ' · ' + c.code : 'Capstone'}</div>
       <h2 style="font-size:20px">${esc(c ? c.title : p.title)}</h2>
-      ${c ? `<div class="meta">${esc(c.faculty)} · ${esc(c.effort)}</div><div class="meta"><a href="${c.url}" target="_blank" rel="noopener">Official MIT Learn page</a><sup class="ref"><a href="#ref-${c.ref}" data-ref="${c.ref}">[${c.ref}]</a></sup></div>` : `<div class="meta">${esc(p.intro || '')}</div>`}
+      ${c ? `<div class="meta">${esc(c.faculty)} · ${esc(c.effort)}</div><div class="meta"><a href="${c.url}" target="_blank" rel="noopener">Source course page</a><sup class="ref"><a href="#ref-${c.ref}" data-ref="${c.ref}">[${c.ref}]</a></sup></div>` : `<div class="meta">${esc(p.intro || '')}</div>`}
       </div></section><div class="list">`;
     p.modules.forEach(m => {
       const pr = modProgress(m);
@@ -207,7 +207,7 @@ function vModule({ id }) {
 }
 
 /* ---------- References ---------- */
-const TYPES = ['All', 'MIT program', 'Paper', 'Textbook', 'Course & video', 'Article', 'Reference', 'Standard & regulation', 'Tool'];
+const TYPES = ['All', 'Program pages', 'Paper', 'Textbook', 'Course & video', 'Article', 'Reference', 'Standard & regulation', 'Tool'];
 function vRefs() {
   setTitle('References');
   let h = `<div class="search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--faint)"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -259,13 +259,13 @@ function vSettings() {
     <input type="file" id="imp" accept="application/json,.json" hidden></div></div></section>
   <section class="card"><div class="modsec"><h4>Reset</h4>
     <p class="note" style="margin:0">Clears all statuses, checkmarks, scores, and notes.</p>
-    <div class="btnrow"><button class="btn" id="reset" style="color:var(--accent)">Reset all progress</button></div></div></section>
+    <div class="btnrow"><button class="btn" id="reset" style="color:var(--danger)">Reset all progress</button></div></div></section>
   <section class="card"><div class="modsec"><h4>About</h4>
-    <p class="note" style="margin:0">An independent self-study reconstruction of MIT Open Learning’s Universal AI program (<a href="https://learn.mit.edu/programs/program-v1:UAI+B2C" target="_blank" rel="noopener">program-v1:UAI+B2C</a>). It is not affiliated with or endorsed by MIT. Readings are mapped to MIT’s published module outcomes; MIT does not publish a reading list. Weeks 11 and 19 are added synthesis and governance weeks.</p></div></section>`;
+    <p class="note" style="margin:0">UpskillAI Self Study is modeled on the public syllabus of MIT Open Learning’s <a href="https://learn.mit.edu/programs/program-v1:UAI+B2C" target="_blank" rel="noopener">Universal AI program</a>; it is not affiliated with or endorsed by MIT. Readings are mapped to the published module outcomes, since no official reading list is published. Weeks 11 and 19 are added synthesis and governance weeks.</p></div></section>`;
   $('#start').onchange = e => { S.start = e.target.value; save(); toast(S.start ? 'Start date saved' : 'Start date cleared'); };
   $('#exp').onclick = () => {
     const blob = new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'uai-study-progress.json';
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'upskillai-progress.json';
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('Backup exported');
   };
   $('#impBtn').onclick = () => $('#imp').click();

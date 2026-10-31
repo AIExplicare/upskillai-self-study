@@ -1,4 +1,4 @@
-const CACHE = 'uai-study-v1';
+const CACHE = 'upskillai-v2';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './data.js', './store.js', './manifest.json',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 
